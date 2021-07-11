@@ -77,4 +77,49 @@ class TestDataTableCreate:
             "b": np.array([random.random() for _ in range(10000)])
         })
 
-        _ = df.dtypes
+class TestDataTableSelect:
+    def test_get_item(self):
+        df = tisch.DataTable({
+            "a": np.array([random.random() for _ in range(10000)]), 
+            "b": np.array([random.random() for _ in range(10000)])
+        })
+
+    def test_bool_select(self):
+        df_tisch = tisch.DataTable({
+            "a": np.array([True, False, True, True]), 
+            "b": np.array([0.5, 0.32, 4.1, 5.2]), 
+            "c": np.array([1, 2, 3, 4])
+        })
+
+        with pytest.raises(ValueError):
+            df_bool = df_tisch[['a', 'b']]
+            _ = df_tisch[df_bool]
+
+        with pytest.raises(ValueError):
+            df_bool = df_tisch['b']
+            _ = df_tisch[df_bool]
+
+        df_bool = df_tisch['a']
+        _ = df_tisch[df_bool]
+
+    def test_wrong_selection_type(self):
+        with pytest.raises(TypeError):
+            df_tisch = tisch.DataTable({
+                "a": np.array([True, False, True, True]), 
+                "b": np.array([0.5, 0.32, 4.1, 5.2]), 
+                "c": np.array([1, 2, 3, 4])
+            })
+
+            _ = df_tisch[True]
+
+    def test_tuple_selection(self):
+        with pytest.raises(TypeError):
+            df_tisch = tisch.DataTable({
+                "a": np.array([True, False, True, True]), 
+                "b": np.array([0.5, 0.32, 4.1, 5.2]), 
+                "c": np.array([1, 2, 3, 4])
+            })
+
+            _ = df_tisch["a", "b", "c"]
+        
+

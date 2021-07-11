@@ -198,7 +198,126 @@ class DataTable:
             'Data Type': dtypes_
         })
 
-    
+    def __getitem__(self, index):
+        """
+        Use the brackets operator to select rows and columns
+        Usage:
+        ------
+        df['col1'] ---> Selects only 'col1'
+        df[['col1', 'col2']] ---> Selects both 'col1' and 'col2'
+        df[boolean] ---> Selects a DataTable that contains a boolean condition
+        df[rs, cs] ---> Row and column selected together
 
+        Returns:
+        --------
+        A subset of the original DataTable based on the indices provided
+        """
 
+        if isinstance(index, str):
+            return DataTable({
+                index: self._data[index]
+            })
+        
+        if isinstance(index, list):
+            return DataTable({
+                col: self._data[col] for col in index
+            })
 
+        if isinstance(index, DataTable):
+            if index.shape[1] != 1:
+                raise ValueError('Index must be a one-column DataTable')
+            
+            a = next(iter(index._data.values()))
+
+            if a.dtype.kind != 'b':
+                raise ValueError('Item must be a one-column Boolean DataTable')
+
+            return DataTable({
+                col: value[a] for col, value in self._data.items()
+            })
+
+        if isinstance(index, tuple):
+            return self._getitem_tuple(index)
+
+        raise TypeError("Wrong data type entered. Pass either a string, tuple, list or DataTable")
+
+    def _getitem_tuple(self, index):
+        if len(index) != 2:
+            raise TypeError("Tuple must have length of exactly 2")
+        
+        row, col = index
+
+        if isinstance(row, int):
+            row = [row]
+        elif isinstance(row, DataTable):
+            if row.shape[1] != 1:
+                raise ValueError("Row selection must be of 1 column")
+            row = next(iter(row._data.values()))
+            if row.dtype.kind != 'b':
+                raise TypeError('Row selection must be a boolean DataTable')
+        elif not isinstance(row, (list, slice)):
+            raise TypeError("Row selection is not a list, slice, int or DataTable")
+
+        
+        if isinstance(col, int):
+            col = [self.columns[col]]        
+        elif isinstance(col, str):
+            col = [col]
+        elif isinstance(col, list):
+            new_cols = []
+            for c in col:
+                if isinstance(c, int):
+                    new_cols.append(self.columns[c])
+                elif isinstance(c, str):
+                    # Assume c is a string
+                    new_cols.append(c)
+                
+            col = new_cols
+        elif isinstance(col, slice):
+            start = col.start
+            stop = col.stop
+            step = col.step
+
+            if isinstance(start, str):
+                start = self.columns.index(start)
+
+            if isinstance(stop, str):
+                stop = self.columns.index(stop) + 1
+            
+            col = self.columns[start:stop:step]
+
+        else:
+            raise TypeError("Column selection must be slice, int, list or str")
+
+        data = {}
+        for c in col:
+            data[c] = self._data[c][row]
+
+        return DataTable(data)
+
+    def _ipython_key_completions_(self):
+        return self.columns
+
+    def __setitem__(self, key, value):
+        if not isinstance(key, str):
+            raise TypeError("Key must be a string")
+        if isinstance(value, np.ndarray):
+            if value.ndim != 1:
+                raise ValueError("Value must be one-dimensional array")
+            if len(value) != len(self):
+                raise ValueError("Length of array must match DataTable's length")
+        elif isinstance(value, DataTable):
+            if value.shape[1] != 1:
+                raise ValueError("Setting DataTable must be of a single column")
+            if len(value) != len(self):
+                raise ValueError("Setting DataTable must have same length as current DataTable")
+            value = next(iter(value._data.values()))
+        elif isinstance(value, (int, bool, str, float)):
+            value = np.repeat(value, len(self))
+        else:
+            raise TypeError("Value must be either of: DataTable, array, int, bool, str, float")
+
+        if value.dtype.kind == 'U':
+            value = value.astype('object')
+
+        self._data[key] = value
