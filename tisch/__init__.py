@@ -1,5 +1,4 @@
 import numpy as np
-from IPython.core.display import HTML, display
 
 __version__ = '0.0.1'
 
@@ -535,3 +534,267 @@ class DataTable:
             return dfs[0]
         return dfs
 
+    def rename(self, cols):
+        """
+        Rename columns in DataTable using a dictionary
+
+        Parameters:
+        -----------
+        columns: dict
+            A dict mapping old column names to the new column names
+
+        Returns:
+        --------
+        DataTable with the column name changes
+        """
+        if not isinstance(cols, dict):
+            raise TypeError('Column names must be a dict')
+
+        data = {}
+        for col, val in self._data.items():
+            data[cols.get(col, col)] = val
+
+        return DataTable(data)
+
+    def drop(self, column):
+        """
+        Drops one or more columns in a DataTable
+
+        Parameters
+        ----------
+        columns: str or list of strings
+
+        Returns
+        -------
+        A DataTable with the column dropped
+        """
+        if isinstance(column, str):
+            column = [column]
+        elif not isinstance(column, list):
+            raise TypeError("Columns must be a str or list")
+
+        data = {}
+        for col, val in self._data.items():
+            if not col in column:
+                data[col] = val
+        
+        return DataTable(data)
+
+    def _non_agg(self, func, **kwargs):
+        """
+        Generic Function to recalculate columns based
+        on a non-aggregation function
+
+        Parameters
+        ----------
+        func: The function name of the non-aggregation function
+        kwargs: Any requisite extra keyword arguments for certain functions
+
+        Returns
+        -------
+        DataTable with the non-aggregation applied
+        """
+        data = {}
+        for col, val in self._data.items():
+            if val.dtype.kind == 'O':
+                data[col] = val.copy()
+            else:
+                data[col] = func(val, **kwargs)
+
+        return DataTable(data)
+
+    def abs(self):
+        """
+        Takes the absolute value of each value in the DataTable
+
+        Returns:
+        --------
+        A DataTable containing the absolute values
+        """
+        return self._non_agg(np.abs)
+
+    def round(self, n):
+        """
+        Rounds each value in the DataTable to n decimal places
+
+        Returns:
+        --------
+        A DataTable containing the rounded values
+        """
+        return self._non_agg(np.round, decimals = n)
+
+    def copy(self):
+        """
+        Makes a new copy of the DataTable
+
+        Returns:
+        --------
+        A new copy of the DataTable
+        """
+
+        return self._non_agg(np.copy)
+
+    def diff(self, n = 1):
+        """
+        Take the difference between the current value and
+        the nth value above it. 
+
+        Parameters:
+        -----------
+        n: int
+
+        Returns:
+        --------
+        A DataTable of values
+        """
+        def func(value):
+            value = value.astype('float')
+            shifted = np.roll(value, n)
+            value = value - shifted
+            value[:n] = np.nan
+            if n >= 0:
+                value[:n] = np.nan
+            else:
+                value[n:] = np.nan
+            return value
+
+        return self._non_agg(func)
+
+    def pct_diff(self, n = 1):
+        """
+        Finds the percentage difference between the current
+        value and the nth value above it.
+
+        Parameters:
+        -----------
+        n: int
+
+        Returns:
+        --------
+        A DataTable
+        """
+        def func(value):
+            value = value.astype('float')
+            shifted = np.roll(value, n)
+            value = ((value - shifted) / shifted) * 100
+            value[:n] = np.nan
+            if n >= 0:
+                value[:n] = np.nan
+            else:
+                value[n:] = np.nan
+            return value
+
+        return self._non_agg(func)
+
+    def _operation(self, op, other):
+        """
+        Operator function for DataTable operations
+
+        Parameters:
+        -----------
+        op: str of the operator method
+        other: the other operand
+
+        Returns:
+        --------
+        A DataTable
+        """
+        if isinstance(other, DataTable):
+            if other.shape[1] != 1:
+                raise ValueError("DataTable must be of a single column")
+            else:
+                other = next(iter(other._data.values()))
+
+        data = {}
+        for col, val in self._data.items():
+            func = getattr(val, op)
+            data[col] = func(other)
+
+        return DataTable(data)
+
+    def __add__(self, other):
+        return self._operation('__add__', other)
+
+    def __sub__(self, other):
+        return self._operation('__sub__', other)
+
+    def __mul__(self, other):
+        return self._operation('__mul__', other)
+
+    def __truediv__(self, other):
+        return self._operation('__truediv__', other)
+
+    def __radd__(self, other):
+        return self._operation('__radd__', other)
+
+    def __rsub__(self, other):
+        return self._operation('__rsub__', other)
+
+    def __rmul__(self, other):
+        return self._operation('__rmul__', other)
+
+    def __floordiv__(self, other):
+        return self._operation('__floordiv__', other)
+
+    def __pow__(self, other):
+        return self._operation('__pow__', other)
+
+    def sort_vals(self, key, ascending = True):
+        """
+        Sort the DataTable by one or more values
+
+        Parameters:
+        -----------
+        key: str or list
+            Column(s) on the basis of which sorting will be done
+        
+        ascending: bool
+            In which order it will be sorted. True (ascending) by default
+
+        Returns:
+        --------
+        A DataTable sorted by the given key
+        """
+
+        if isinstance(key, str):
+            order = np.argsort(self._data[key])
+        elif isinstance(key, list):
+            key = [self._data[col] for col in key[::-1]]
+            order = np.lexsort(key)
+        else:
+            raise TypeError("Key must be a list or a string")
+
+        if not ascending:
+            order = order[::-1]
+        
+        return self[order.tolist(), :]
+
+    def sample(self, n = None, fraction = None, replace = False, seed = None):
+        """
+        Return random rows of the DataTable
+
+        Parameters:
+        -----------
+        n: int
+            Exact number of rows to be returned
+        fraction: float
+            A fraction of the total number of rows to be returned
+        replace: bool
+            Whether or not select rows with replacement (can cause duplication)
+        seed: int
+            Seed for the random number generator
+        """
+        if seed:
+            np.random.seed(seed)
+
+        if fraction:
+            if fraction <= 0:
+                raise ValueError("fraction must be positive")
+            n = int(fraction * len(self))
+
+        if not isinstance(n, int):
+            raise TypeError("n must be an integer")
+        choices = np.random.choice(range(len(self)), n, replace = replace)
+        return self[choices.tolist(), :]
+        
+            
