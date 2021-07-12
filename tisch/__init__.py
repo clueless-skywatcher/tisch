@@ -3,6 +3,31 @@ from IPython.core.display import HTML, display
 
 __version__ = '0.0.1'
 
+class ArrayCounter:
+    """
+    A substitute to the original collections.Counter class, but it
+    takes in a NumPy Array
+    """
+    def __init__(self, arr: np.ndarray):
+        self._arr = arr
+        self._dict = {}
+        for x in arr:
+            self._dict[x] = self._dict.get(x, 0) + 1
+        
+    def __getitem__(self, x):
+        return self._dict.get(x, 0)
+
+    def items(self):
+        return self._dict.items()
+
+    def uniques_counts(self):
+        l = [[], []]
+        for x, y in self._dict.items():
+            l[0].append(x)
+            l[1].append(y)
+
+        return [np.array(l[0]), np.array(l[1])]
+
 class DataTable:
 
     def __init__(self, data):
@@ -321,3 +346,192 @@ class DataTable:
             value = value.astype('object')
 
         self._data[key] = value
+
+    def head(self, n = 10):
+        """
+        Return the first n rows of the DataTable
+
+        Parameters:
+        -----------
+        n: int, default = 10
+
+        Returns:
+        --------
+        DataTable
+        """
+
+        return self[:n, :]
+
+    def tail(self, n = 10):
+        """
+        Return the last n rows of the DataTable
+
+        Parameters:
+        -----------
+        n: int, default = 10
+
+        Returns:
+        --------
+        DataTable
+        """
+
+        return self[-n:, :]
+
+    def _agg(self, func):
+        """
+        Generic Function to aggregate columns based
+        on an aggregation function
+
+        Parameters
+        ----------
+        func: The function name of the aggregation function
+
+        Returns
+        -------
+        DataTable with the aggregation applied
+        """
+
+        data = {}
+        for col, value in self._data.items():
+            try:
+                data[col] = np.array([func(value)])
+            except TypeError:
+                pass
+
+        return DataTable(data)
+
+    def min(self):
+        return self._agg(np.min)
+
+    def max(self):
+        return self._agg(np.max)
+
+    def mean(self):
+        return self._agg(np.mean)
+
+    def median(self):
+        return self._agg(np.median)
+
+    def sum(self):
+        return self._agg(np.sum)
+
+    def var(self):
+        return self._agg(np.var)
+
+    def std(self):
+        return self._agg(np.std)
+
+    def all(self):
+        return self._agg(np.all)
+
+    def any(self):
+        return self._agg(np.any)
+
+    def argmax(self):
+        return self._agg(np.argmax)
+
+    def argmin(self):
+        return self._agg(np.argmin)
+
+    def isna(self):
+        """
+        Finds whether each value in the DataTable is missing or not
+        
+        Returns:
+        --------
+        A DataTable of booleans
+        """
+        data = {}
+        for col, val in self._data.items():
+            if val.dtype.kind == 'O':
+                data[col] = val == None
+            else:
+                data[col] = np.isnan(val)
+        
+        return DataTable(data)
+
+    def count(self):
+        """
+        Returns the number of non-missing values for each column
+
+        Returns:
+        --------
+        A DataTable with the number of non-missing values for each column
+        """
+
+        df = self.isna()
+
+        data = {}
+        row_count = len(df)
+        for col, val in df._data.items():
+            data[col] = np.array([row_count - val.sum()])
+        
+        return DataTable(data)
+
+    def unique(self):
+        """
+        Finds the unique values in each column
+
+        Returns
+        -------
+        A list containing one-column DataTables
+        """
+
+        dfs = []
+        for col, val in self._data.items():
+            data = {
+                col: np.array(list(set(val.tolist())))
+            }
+            dfs.append(DataTable(data))
+        
+        if len(dfs) == 1:
+            return dfs[0]
+
+        return dfs
+
+    def nunique(self):
+        """
+        Finds the number of unique values in each column
+
+        Returns:
+        --------
+        A DataTable containing the number of unique values in each column
+        """
+
+        data = {}
+        for col, val in self._data.items():
+            data[col] = np.array([len(set(val.tolist()))])
+        
+        return DataTable(data)
+
+    def val_counts(self, normalize = False):
+        """
+        Finds the counts of all unique values for each column in the DataTable
+
+        Optional Parameters:
+        --------------------
+        normalize: bool
+            If True, return the relative frequencies of elements
+
+        Returns:
+        --------
+        A list of DataTables containing all the unique value counts
+        """
+        dfs = []
+        for col, val in self._data.items():     
+            arr_dict = ArrayCounter(val)
+            uniques, counts = arr_dict.uniques_counts()
+            order = np.argsort(-counts)
+            uniques = uniques[order]
+            counts = counts[order]
+
+            if normalize:
+                counts = counts / len(self)
+
+            data = {col: uniques, 'count': counts}
+            dfs.append(DataTable(data))
+
+        if len(dfs) == 1:
+            return dfs[0]
+        return dfs
+
